@@ -61,6 +61,8 @@ struct editorConfig E;
 
 /* ***prototypes*** */
 void editorSetStatusMessage(const char* fmt,...);
+void editorRefreshScreen();
+char* editorPrompt(char* prompt);
 
 /* ***terminal*** */
 void die(const char* s){
@@ -305,7 +307,18 @@ void editorInsertChar(int c){
     E.cx++;
 }
 void editorInsertNewLine(){
-    
+    if(E.cx==0){
+        editorInsertRow(E.cy,"",0);
+    }else{
+        erow* row=&E.row[E.cy];
+        editorInsertRow(E.cy+1,&row->chars[E.cx],row->size-E.cx);
+        row=&E.row[E.cy];/* !!editorInsertRow() calls realloc(),which may change E.row */
+        row->size=E.cx;
+        row->chars[row->size]='\0';/* do not forget this */
+        editorUpdateRow(row);
+    }
+    E.cx=0;
+    E.cy++;
 }
 void editorDelChar(){/* is actually backspace,and delete is based on backspace*/
     if(E.cy==E.numrows) return;
@@ -363,7 +376,13 @@ void editorOpen(char* filename){
     E.dirty=0;
 }
 void editorSave(){
-    if(E.filename==NULL) return;/* TODO */
+    if(E.filename==NULL){
+        E.filename=editorPrompt("Save as: %s (ESCAPE to cancel)");
+        if(E.filename==NULL){
+            editorSetStatusMessage("Save aborted");
+            return;
+        }
+    }
 
     int len;
     char* buf=editorRowsToString(&len);
@@ -524,6 +543,36 @@ void editorSetStatusMessage(const char* fmt,...){
 }
 
 /* ***input*** */
+char* editorPrompt(char* prompt){
+    size_t bufsize=128;
+    char* buf=malloc(bufsize);
+    size_t buflen=0;
+    buf[0]='\0';/* !! otherwise when buf is empty,editorSetStatusMessage() will have no idea where the string will stop */
+
+    while(1){
+        editorSetStatusMessage(prompt,buf);
+        editorRefreshScreen();
+
+        int c=editorReadKey();
+        if(c=='\x1b'){
+            editorSetStatusMessage("");
+            free(buf);
+            return NULL;
+        }else if(c=='\r'){
+            if(buflen!=0){
+                editorSetStatusMessage("");
+                return buf;
+            }
+        }else if(!iscntrl(c) && c<128){
+            if(buflen==bufsize-1){
+                bufsize*=2;
+                buf=realloc(buf,bufsize);
+            }
+            buf[buflen++]=c;
+            buf[buflen]='\0';
+        }
+    }
+}
 void editorMoveCorsor(int key){
     erow *row=(E.cy>=E.numrows) ? NULL : &E.row[E.cy];
     switch (key)
@@ -568,7 +617,7 @@ void editorProcessKeypress(){
     switch (c)
     {
     case '\r':
-        /* TODO */
+        editorInsertNewLine();
         break;
     case CTRL_KEY('q'):
         if(E.dirty && quit_times>0){
