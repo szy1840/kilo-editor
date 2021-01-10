@@ -554,8 +554,11 @@ char* editorPrompt(char* prompt){
         editorRefreshScreen();
 
         int c=editorReadKey();
-        if(c=='\x1b'){
-            editorSetStatusMessage("");
+
+        if(c==BACKSPACE || c==DEL_KEY || c==CTRL_KEY('h')){
+            if(buflen>0) buf[--buflen]='\0';
+        }else if(c=='\x1b'){
+            editorSetStatusMessage("");/* seems useless to me..anyway this is a good habit */
             free(buf);
             return NULL;
         }else if(c=='\r'){
