@@ -62,7 +62,7 @@ struct editorConfig E;
 /* ***prototypes*** */
 void editorSetStatusMessage(const char* fmt,...);
 void editorRefreshScreen();
-char* editorPrompt(char* prompt);
+char* editorPrompt(char* prompt,void (*callback)(char*,int));
 
 /* ***terminal*** */
 void die(const char* s){
@@ -221,6 +221,17 @@ int editorRowCxToRx(erow* row,int cx){
     }
     return rx;
 }
+int editorRowRxToCx(erow* row,int rx){
+    int cur_rx=0;
+    int cx;
+    for(cx=0;cx<row->size;cx++){
+        if(row->chars[cx]=='\t')
+            cur_rx+=(KILO_TAB_STOP-1)-(cur_rx%KILO_TAB_STOP);
+        cur_rx++;
+        if(cur_rx>rx) return cx;/* if cur_rx==rx,we need to wait for the increment of cx in the for loop */
+    }
+    return cx;/* this line is normally useless */
+}
 void editorUpdateRow(erow *row){
     int tabs=0;
     int j;
@@ -377,7 +388,7 @@ void editorOpen(char* filename){
 }
 void editorSave(){
     if(E.filename==NULL){
-        E.filename=editorPrompt("Save as: %s (ESCAPE to cancel)");
+        E.filename=editorPrompt("Save as: %s (ESC to cancel)",NULL);
         if(E.filename==NULL){
             editorSetStatusMessage("Save aborted");
             return;
@@ -413,6 +424,71 @@ void editorSave(){
     /* ftruncate() sets the file’s size to the specified length. 
     If the file is larger than that, it will cut off any data at the end of the file to make it that length. 
     If the file is shorter, it will add 0 bytes at the end to make it that length. */
+}
+
+/* ***find*** */
+void editorFindCallBack(char* query,int key){
+    static int last_match=-1;
+    static int direction=1;
+
+    if(key=='\r' || key=='\x1b'){
+        last_match=-1;/* search aborted and we need to reset to prepare for the next search */
+        direction=1;
+        return;
+    }else if(key==ARROW_RIGHT || key==ARROW_DOWN){
+        direction=1;
+    }else if(key==ARROW_LEFT || key==ARROW_UP){
+        direction=-1;
+    }else{
+        last_match=-1;/* query changed and we need to reset */
+        direction=1;
+    }
+
+    if(last_match==-1) direction=1;
+    int current=last_match;
+    int i;
+    for(i=0;i<E.numrows;i++){
+        current+=direction;
+
+        /* wrap around and continue from the top (or bottom) */
+        if(current==-1){
+            current=E.numrows-1;
+        }else if(current==E.numrows){
+            current=0;
+        }
+
+        erow* row=&E.row[current];
+        char* match=strstr(row->render,query);
+        if(match){
+            last_match=current;
+            E.cy=current;
+            E.cx=editorRowRxToCx(row,match-row->render);
+            /* since they are all addresses of strings, this will be the index */
+            /* match will be bigger(in most case) */
+            E.rowoff=E.cy;
+            /* the tutorial use E.numrows and wait for editorScroll() to convert it to E.cy */
+            /* seems not intuitive to me */
+            break;
+        }
+    }
+}
+void editorFind(){
+    int saved_cx=E.cx;
+    int saved_cy=E.cy;
+    int saved_coloff=E.coloff;
+    int saved_rowoff=E.rowoff;
+    /* otherwise, when ESC is pressed, the cursor will go to cx=0;cy=0; 
+        because match will return the exact address of row->render,(the first row's),because "" will match any string
+    */
+    char *query=editorPrompt("Search: %s (ESC to cancel | Arrows to go to next match)",editorFindCallBack);
+    if(query){
+        free(query);
+    }else{
+        E.cx=saved_cx;
+        E.cy=saved_cy;
+        E.coloff=saved_coloff;
+        E.rowoff=saved_rowoff;
+    }
 }
 
 /* ***append buffer*** */
@@ -543,7 +619,7 @@ void editorSetStatusMessage(const char* fmt,...){
 }
 
 /* ***input*** */
-char* editorPrompt(char* prompt){
+char* editorPrompt(char* prompt,void (*callback)(char*,int)){
     size_t bufsize=128;
     char* buf=malloc(bufsize);
     size_t buflen=0;
@@ -559,11 +635,13 @@ char* editorPrompt(char* prompt){
             if(buflen>0) buf[--buflen]='\0';
         }else if(c=='\x1b'){
             editorSetStatusMessage("");/* seems useless to me..anyway this is a good habit */
+            if(callback) callback(buf,c);
             free(buf);
             return NULL;
         }else if(c=='\r'){
             if(buflen!=0){
                 editorSetStatusMessage("");
+                if(callback) callback(buf,c);
                 return buf;
             }
         }else if(!iscntrl(c) && c<128){
@@ -574,6 +652,8 @@ char* editorPrompt(char* prompt){
             buf[buflen++]=c;
             buf[buflen]='\0';
         }
+
+        if(callback) callback(buf,c);
     }
 }
 void editorMoveCorsor(int key){
@@ -633,8 +713,12 @@ void editorProcessKeypress(){
         write(STDOUT_FILENO,"\x1b[H",3);
         exit(0);
         break;
+
     case CTRL_KEY('s'):
         editorSave();
+        break;
+    case CTRL_KEY('f'):
+        editorFind();
         break;
     case HOME_KEY:
         E.cx=0;
@@ -716,7 +800,7 @@ int main(int argc, char* argv[]){
     if(argc>=2){
         editorOpen(argv[1]);
     }
-    editorSetStatusMessage("HELP: Ctrl-S=save | Ctrl-Q=quit");
+    editorSetStatusMessage("HELP: Ctrl-S=save | Ctrl-Q=quit | Ctrl-F=find");
 
     while(1){
         editorRefreshScreen();
