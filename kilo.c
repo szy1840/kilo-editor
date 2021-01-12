@@ -36,7 +36,8 @@ enum editorKey{
 };
 enum editorHighlight{
     HL_NORMAL=0,
-    HL_NUMBER
+    HL_NUMBER,
+    HL_MATCH
 };
 
 /* ***data*** */
@@ -216,20 +217,35 @@ int getWindowSize(int* rows, int* cols){
 }
 
 /* **syntax highlighting** */
+int is_seperator(int c){
+    return isspace(c) || c=='\0' || strchr(",.()+-/*=~%<>[];",c)!=NULL;
+}
 void editorUpdateSyntax(erow* row){
     row->hl=realloc(row->hl,row->rsize);
     memset(row->hl,HL_NORMAL,row->rsize);
-    int i;
-    for(i=0;i<row->rsize;i++){
-        if(isdigit(row->render[i])){
+    int prev_sep=1;/* 1 means true here, and we consider the beginning of a line a seperator */
+
+    int i=0;
+    while(i<row->rsize){
+        char c=row->render[i];
+        unsigned char prev_hl=(i>0) ? row->hl[i-1] : HL_NORMAL;/* if it's the first char in the row */
+        
+        if(isdigit(c) && (prev_sep || prev_hl==HL_NUMBER)){
             row->hl[i]=HL_NUMBER;
+            prev_sep=0;
+            i++;
+            continue;
         }
+
+        prev_sep=is_seperator(c);
+        i++;
     }
 }
 int editorSyntaxToColor(int hl){
     switch (hl)
     {
     case HL_NUMBER: return 31;
+    case HL_MATCH: return 34;
     default: return 37;
     }
 }
@@ -459,6 +475,14 @@ void editorFindCallBack(char* query,int key){
     static int last_match=-1;
     static int direction=1;
 
+    static int saved_hl_line;
+    static unsigned char* saved_hl=NULL;
+    if(saved_hl){
+        memcpy(E.row[saved_hl_line].hl,saved_hl,E.row[saved_hl_line].rsize);
+        free(saved_hl);
+        saved_hl=NULL;
+    }
+
     if(key=='\r' || key=='\x1b'){
         last_match=-1;/* search aborted and we need to reset to prepare for the next search */
         direction=1;
@@ -496,6 +520,11 @@ void editorFindCallBack(char* query,int key){
             E.rowoff=E.cy;
             /* the tutorial use E.numrows and wait for editorScroll() to convert it to E.cy */
             /* seems not intuitive to me */
+
+            saved_hl_line=current;
+            saved_hl=malloc(row->rsize);
+            memcpy(saved_hl,row->hl,row->rsize);
+            memset(&row->hl[match-row->render],HL_MATCH,strlen(query));
             break;
         }
     }
