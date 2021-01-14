@@ -263,6 +263,8 @@ void editorUpdateSyntax(erow* row){
 
     if(E.syntax==NULL) return;
 
+    char** keywords=E.syntax->keywords;/* easier typing */
+
     char* scs=E.syntax->singleline_comment_start;/* easier typing */
     int scs_len=scs ? strlen(scs) : 0; 
 
@@ -313,6 +315,31 @@ void editorUpdateSyntax(erow* row){
             }
         }
 
+        if(prev_sep){
+            int j;
+            for(j=0;keywords[j];j++){
+                int klen=strlen(keywords[j]);
+                int kw2=keywords[j][klen-1]=='|';
+                if(kw2) klen--;
+
+                if(!strncmp(keywords[j],&row->render[i],klen) && is_seperator(row->render[i+klen])){
+                    memset(&row->hl[i],kw2 ? HL_KEYWORD2 : HL_KEYWORD1,klen);
+                    i+=klen;
+                    break;
+                }
+            }
+
+            /* in the for loop, we check if keywords[j]!=NULL after every increment of j ,
+            so if none of the keywords match, we will stop when keywords[j]==NULL, 
+            so we use this to check if we've broken out from the loop*/
+            if(keywords[j]!=NULL){
+                prev_sep=0;/* in the next loop, c will be the seperator after the keyword, so prev_sep=0 */
+                /* but why not just go to the char after the seperator??? */
+                continue;
+            }
+
+        }
+
         prev_sep=is_seperator(c);
         i++;
     }
@@ -349,7 +376,7 @@ int editorSyntaxToColor(int hl){
     case HL_COMMENT: return 36;
     case HL_KEYWORD1: return 33;//yellow
     case HL_KEYWORD2: return 32;//green
-    case HL_STRING: return 35;
+    case HL_STRING: return 35;//magenta
     case HL_NUMBER: return 31;
     case HL_MATCH: return 34;
     default: return 37;
