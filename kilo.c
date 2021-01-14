@@ -36,6 +36,9 @@ enum editorKey{
 };
 enum editorHighlight{
     HL_NORMAL=0,
+    HL_COMMENT,
+    HL_KEYWORD1,/* actual keywords in one color and common type names in the other color */
+    HL_KEYWORD2,
     HL_STRING,
     HL_NUMBER,
     HL_MATCH
@@ -48,6 +51,8 @@ enum editorHighlight{
 struct editorSyntax{
     char* filetype;
     char** filematch;
+    char** keywords;
+    char* singleline_comment_start;
     int flags;
     /* flags is a bit field that will contain flags for
     whether to highlight numbers and whether to highlight strings for that filetype */
@@ -79,10 +84,19 @@ struct editorConfig E;
 
 /* ***filetypes*** */
 char* C_HL_extensions[]={".c",".h",".cpp",NULL};/* the array must be terminated with NULL */
+char* C_HL_keywords[]={
+    "switch", "if", "while", "for", "break", "continue", "return", "else",
+  "struct", "union", "typedef", "static", "enum", "class", "case",
+  "int|", "long|", "double|", "float|", "char|", "unsigned|", "signed|",
+  "void|", NULL
+};
+
 struct editorSyntax HLDB[]={    /* HLDB, highlight data base */
     {
         "c",
         C_HL_extensions,
+        C_HL_keywords,
+        "//",
         HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS
     },
 };
@@ -249,17 +263,32 @@ void editorUpdateSyntax(erow* row){
 
     if(E.syntax==NULL) return;
 
+    char* scs=E.syntax->singleline_comment_start;/* easier typing */
+    int scs_len=scs ? strlen(scs) : 0; 
+
     int prev_sep=1;/* 1 means true here, and we consider the beginning of a line a seperator */
     int in_string=0;/* store either a double-quote (") or a single-quote (') character as the value of in_string */
-
+    
     int i=0;
     while(i<row->rsize){
         char c=row->render[i];
         unsigned char prev_hl=(i>0) ? row->hl[i-1] : HL_NORMAL;/* if it's the first char in the row */
 
+        if(scs_len && !in_string){
+            if(!strncmp(&row->render[i],scs,scs_len)){
+                memset(&row->hl[i],HL_COMMENT,row->rsize-i);
+                break;
+            }
+        }
+
         if(E.syntax->flags & HL_HIGHLIGHT_STRINGS){
             if(in_string){
                 row->hl[i]=HL_STRING;
+                if(c=='\\' && i+1 < row->rsize){
+                    row->hl[i+1]=HL_STRING;
+                    i+=2;
+                    continue;
+                }
                 if(c==in_string) in_string=0;
                 i++;
                 prev_sep=1;
@@ -317,6 +346,9 @@ void editorSelectSyntaxHighlight(){
 int editorSyntaxToColor(int hl){
     switch (hl)
     {
+    case HL_COMMENT: return 36;
+    case HL_KEYWORD1: return 33;//yellow
+    case HL_KEYWORD2: return 32;//green
     case HL_STRING: return 35;
     case HL_NUMBER: return 31;
     case HL_MATCH: return 34;

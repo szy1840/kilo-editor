@@ -7,3 +7,6 @@ ssssss
 int main(){
         puts("h123.'sf'ello");
 }   
+fsfsff//sfsfsfsfsf
+sfsfsf/fsfssff
+const
