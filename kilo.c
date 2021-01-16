@@ -37,6 +37,7 @@ enum editorKey{
 enum editorHighlight{
     HL_NORMAL=0,
     HL_COMMENT,
+    HL_MLCOMMENT,
     HL_KEYWORD1,/* actual keywords in one color and common type names in the other color */
     HL_KEYWORD2,
     HL_STRING,
@@ -53,16 +54,20 @@ struct editorSyntax{
     char** filematch;
     char** keywords;
     char* singleline_comment_start;
+    char* multiline_comment_start;
+    char* multiline_comment_end;
     int flags;
     /* flags is a bit field that will contain flags for
     whether to highlight numbers and whether to highlight strings for that filetype */
 };
 typedef struct erow{
+    int idx;
     int size;
     int rsize;
     char* chars;
     char* render;
     unsigned char* hl;/* highlight info */
+    int hl_open_comment;
 }erow;
 struct editorConfig{
     int cx,cy;/* E.cy now refers to the position of the cursor within the text file */
@@ -88,7 +93,7 @@ char* C_HL_keywords[]={
     "switch", "if", "while", "for", "break", "continue", "return", "else",
   "struct", "union", "typedef", "static", "enum", "class", "case",
   "int|", "long|", "double|", "float|", "char|", "unsigned|", "signed|",
-  "void|", NULL
+  "void|","const|","volatile|",NULL
 };
 
 struct editorSyntax HLDB[]={    /* HLDB, highlight data base */
@@ -96,7 +101,7 @@ struct editorSyntax HLDB[]={    /* HLDB, highlight data base */
         "c",
         C_HL_extensions,
         C_HL_keywords,
-        "//",
+        "//","/*","*/",
         HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS
     },
 };
@@ -266,20 +271,47 @@ void editorUpdateSyntax(erow* row){
     char** keywords=E.syntax->keywords;/* easier typing */
 
     char* scs=E.syntax->singleline_comment_start;/* easier typing */
+    char* mcs=E.syntax->multiline_comment_start;
+    char* mce=E.syntax->multiline_comment_end;
+
     int scs_len=scs ? strlen(scs) : 0; 
+    int mcs_len=mcs ? strlen(mcs) : 0;
+    int mce_len=mce ? strlen(mce) : 0;
 
     int prev_sep=1;/* 1 means true here, and we consider the beginning of a line a seperator */
     int in_string=0;/* store either a double-quote (") or a single-quote (') character as the value of in_string */
+    int in_comment=(row->idx > 0 && E.row[row->idx-1].hl_open_comment);
+    /* means multicomment here */
     
     int i=0;
     while(i<row->rsize){
         char c=row->render[i];
         unsigned char prev_hl=(i>0) ? row->hl[i-1] : HL_NORMAL;/* if it's the first char in the row */
 
-        if(scs_len && !in_string){
+        if(scs_len && !in_string && !in_comment){/* not in the multipleline comment */
             if(!strncmp(&row->render[i],scs,scs_len)){
                 memset(&row->hl[i],HL_COMMENT,row->rsize-i);
                 break;
+            }
+        }
+        if(mcs_len && mce_len && !in_string){
+            if(in_comment){
+                row->hl[i]=HL_MLCOMMENT;
+                if(!strncmp(&row->render[i],mce,mce_len)){
+                    memset(&row->hl[i],HL_MLCOMMENT,mce_len);
+                    in_comment=0;
+                    prev_sep=1;
+                    i+=mce_len;
+                    continue;
+                }else{
+                    i++;
+                    continue;
+                }
+            }else if(!strncmp(&row->render[i],mcs,mcs_len)){
+                memset(&row->hl[i],HL_MLCOMMENT,mcs_len);
+                in_comment=1;
+                i+=mcs_len;
+                continue;
             }
         }
 
@@ -342,7 +374,12 @@ void editorUpdateSyntax(erow* row){
 
         prev_sep=is_seperator(c);
         i++;
+
     }
+    int changed=(row->hl_open_comment!=in_comment);
+    row->hl_open_comment=in_comment;
+    if(changed && row->idx+1 < E.numrows)
+        editorUpdateSyntax(&E.row[row->idx+1]);
 }
 void editorSelectSyntaxHighlight(){
     E.syntax=NULL;
@@ -373,7 +410,8 @@ void editorSelectSyntaxHighlight(){
 int editorSyntaxToColor(int hl){
     switch (hl)
     {
-    case HL_COMMENT: return 36;
+    case HL_COMMENT:
+    case HL_MLCOMMENT: return 36;//cyan
     case HL_KEYWORD1: return 33;//yellow
     case HL_KEYWORD2: return 32;//green
     case HL_STRING: return 35;//magenta
@@ -434,7 +472,9 @@ void editorInsertRow(int at,char* s,size_t len){
 
     E.row=realloc(E.row,sizeof(erow)*(E.numrows+1));/* we need (currrent row number +1) rows */
     memmove(&E.row[at+1],&E.row[at],sizeof(erow)*(E.numrows-at));
+    for(int j=at+1;j<=E.numrows;j++) E.row[j].idx++;
 
+    E.row[at].idx=at;
     E.row[at].size=len;/* so size doesn't include the nul byte */
     E.row[at].chars=malloc(len+1);
     memcpy(E.row[at].chars,s,len);
@@ -444,6 +484,7 @@ void editorInsertRow(int at,char* s,size_t len){
     E.row[at].rsize=0;
     E.row[at].render=NULL;
     E.row[at].hl=NULL;
+    E.row[at].hl_open_comment=0;
     editorUpdateRow(&E.row[at]);
 
     E.dirty++;/* editorInsertChar() will call this if we need a new row. But why not put it in editorInsertChar()?? */
@@ -457,6 +498,7 @@ void editorDelRow(int at){
     if(at<0 || at>=E.numrows) return;/* at (E.cy) counts from 0 and E.numrows counts from 1 */
     editorFreeRow(&E.row[at]);
     memmove(&E.row[at],&E.row[at+1],sizeof(erow)*(E.numrows-at-1));
+    for(int j=at;j<E.numrows-1;j++) E.row[j].idx--;
     E.numrows--;
     E.dirty++;
 }
@@ -749,7 +791,17 @@ void editorDrawRows(struct abuf *ab){
             int current_color=-1;
             int j;
             for(j=0;j<len;j++){
-                if(hl[j]==HL_NORMAL){
+                if(iscntrl(c[j])){
+                    char sym=(c[j]<=26) ? '@'+c[j] : '?';//'@'=64,'A'=65
+                    abAppend(ab,"\x1b[7m",4);
+                    abAppend(ab,&sym,1);
+                    abAppend(ab,"\x1b[m",3);//this turns off all text formatting,including colors.so we check corrent_color
+                    if(current_color!=-1){//because we didn't use the strategy that print \x1b before every char 
+                        char buf[16];
+                        int clen=snprintf(buf,sizeof(buf),"\x1b[%dm",current_color);
+                        abAppend(ab,buf,clen);
+                    }
+                }else if(hl[j]==HL_NORMAL){
                     if(current_color!=-1){
                         abAppend(ab,"\x1b[39m",5);
                         current_color=-1;

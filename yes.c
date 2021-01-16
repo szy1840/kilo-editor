@@ -1,12 +1,18 @@
-12.23
+ 12.23
 1234
 12.
 szy12
 ssssss
 #include<stdio.h>
 int main(){
-        puts("h123.'sf'ello");
+        puts("h123.'sf'ello");//fsfsfsffsfsf
 }   
 fsfsff//sfsfsfsfsf
 sfsfsf/fsfssff
-const
+int const s
+continue
+/* sfsfsfsfs8*/sfsfsf
+/* sfsfsfsf
+kmmmmfsfsfs f */
+
+
