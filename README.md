@@ -1,2 +1,2 @@
-# Ubuntu
-just a repository which contains my Ubuntu files.
+# My Kilo
+a text editor under Linux
