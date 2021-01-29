@@ -436,23 +436,41 @@ void Pfunc_C_AutoPrototype(){
         editorSetStatusMessage("regex fail to compile.");
         return;
     }
+
+    regex_t pt;
+    reti=regcomp(&pt,"^(//\\s*prototypes?|/\\*\\s*prototypes?\\s*\\*/)",REG_EXTENDED);
+    if(reti){
+        editorSetStatusMessage("regex fail to compile.");
+        return;
+    }
+
     int count=0;
-    for(int i=0;i<2;i++){
-        reti = regexec(&regex,E.row[i].render,0,NULL,0);
+    int record_rownum=E.numrows;
+    int pt_pos=0;
+    for (int i = 0; i < record_rownum; i++){
+        reti=regexec(&pt,E.row[i].render,0,NULL,0);
+        if(!reti){
+            pt_pos=i;
+            break;
+        }
+    }
+    
+    
+    for(int i=record_rownum-1;i>pt_pos;i--){
+        reti = regexec(&regex,E.row[i+count].render,0,NULL,0);
             if(!reti){
                 editorSetStatusMessage(E.row[i].render);
                 editorRefreshScreen();
                 char rowbuf[256];
-                memset(rowbuf,'\0',256);
-
-                strcpy(rowbuf,E.row[i].render);
-                /* for(int j=strlen(rowbuf);j>=0;j--){
+                strncpy(rowbuf,E.row[i+count].render,sizeof(rowbuf));
+                rowbuf[255]='\0';
+                for(int j=strlen(rowbuf);j>=0;j--){
                     if(rowbuf[j]=='{'){
                         rowbuf[j]=';';
                         break;
                     }
-                } */
-                editorInsertRow(0,rowbuf,strlen(rowbuf));
+                }
+                editorInsertRow(pt_pos+1,rowbuf,strlen(rowbuf));
                 count++;
             }else if(reti!=REG_NOMATCH){
                 char errbuf[64];
@@ -464,6 +482,7 @@ void Pfunc_C_AutoPrototype(){
     editorSetStatusMessage("count:%d",count);
     editorRefreshScreen();
 	regfree(&regex);
+    regfree(&pt);
 }
 void hey(){
 

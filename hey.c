@@ -1,5 +1,10 @@
+#include<stdio.h>
+int aaa(){
+}
+//  prototype
 char*** hello() {
 }
+
 
 int main(){//fsfsfsfs
 }
@@ -16,6 +21,6 @@ enums fss fsfff(){
 union fsfs jjjjj(){
 	
 }
-int yes(){
+int yes(){}
 
 }
