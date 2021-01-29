@@ -1,2 +1,2 @@
 # My Kilo
-a text editor under Linux
+a text editor on Linux
