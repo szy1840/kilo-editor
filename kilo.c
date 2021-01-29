@@ -15,6 +15,7 @@
 #include<sys/types.h>
 #include<time.h>
 #include<string.h>
+#include<regex.h>
 
 /* ***define*** */
 #define CTRL_KEY(k) ((k)&0x1f)  //make it more readable,compared to use ascii representation directly
@@ -48,6 +49,7 @@ enum editorHighlight{
 #define HL_HIGHLIGHT_NUMBERS (1<<0)
 #define HL_HIGHLIGHT_STRINGS (1<<1)
 
+typedef void (*pfuncPtr)(void);
 /* ***data*** */
 struct editorSyntax{
     char* filetype;
@@ -83,6 +85,9 @@ struct editorConfig{
     char statusmsg[80];
     time_t statusmsg_time;
     struct editorSyntax* syntax;
+    pfuncPtr* processfuncs;
+    char** pfuncname;
+    int pfuncnum;
     struct termios orig_termios;
 };
 struct editorConfig E;
@@ -111,6 +116,7 @@ struct editorSyntax HLDB[]={    /* HLDB, highlight data base */
 void editorSetStatusMessage(const char* fmt,...);
 void editorRefreshScreen();
 char* editorPrompt(char* prompt,void (*callback)(char*,int));
+void editorInsertRow(int at,char* s,size_t len);
 
 /* ***terminal*** */
 void die(const char* s){
@@ -421,6 +427,62 @@ int editorSyntaxToColor(int hl){
     }
 }
 
+/*process functions*/
+void Pfunc_C_AutoPrototype(){
+    regex_t regex;
+    int reti;
+    reti=regcomp(&regex,"^(struct |enum |union )?([a-zA-Z0-9_]+\\**\\s)[a-zA-Z0-9_]+\\(.*\\)\\s?\\{.*",REG_EXTENDED);
+    if(reti){
+        editorSetStatusMessage("regex fail to compile.");
+        return;
+    }
+    int count=0;
+    for(int i=0;i<2;i++){
+        reti = regexec(&regex,E.row[i].render,0,NULL,0);
+            if(!reti){
+                editorSetStatusMessage(E.row[i].render);
+                editorRefreshScreen();
+                char rowbuf[256];
+                memset(rowbuf,'\0',256);
+
+                strcpy(rowbuf,E.row[i].render);
+                /* for(int j=strlen(rowbuf);j>=0;j--){
+                    if(rowbuf[j]=='{'){
+                        rowbuf[j]=';';
+                        break;
+                    }
+                } */
+                editorInsertRow(0,rowbuf,strlen(rowbuf));
+                count++;
+            }else if(reti!=REG_NOMATCH){
+                char errbuf[64];
+                regerror(reti, &regex, errbuf, sizeof(errbuf));
+                editorSetStatusMessage(errbuf);
+                return;
+            }
+    }
+    editorSetStatusMessage("count:%d",count);
+    editorRefreshScreen();
+	regfree(&regex);
+}
+void hey(){
+
+}
+void editorLoadProcessFunc(char* filetype){
+    if(strcmp(filetype,"c")==0){
+        E.pfuncnum=2;
+        E.processfuncs=malloc(sizeof(pfuncPtr)*E.pfuncnum);
+        E.processfuncs[0]=Pfunc_C_AutoPrototype;
+        E.processfuncs[1]=hey;
+        E.pfuncname=malloc(sizeof(char*)*E.pfuncnum);
+        E.pfuncname[0]="autopt";
+        E.pfuncname[1]="hey";
+        return;
+    }
+
+    return;
+}
+
 /* ***row operation*** */
 int editorRowCxToRx(erow* row,int cx){
     int rx=0;
@@ -470,7 +532,7 @@ void editorUpdateRow(erow *row){
 void editorInsertRow(int at,char* s,size_t len){
     if(at<0 || at>E.numrows) return;
 
-    E.row=realloc(E.row,sizeof(erow)*(E.numrows+1));/* we need (currrent row number +1) rows */
+    E.row=realloc(E.row,sizeof(erow)*(E.numrows+1));/* we need (current row number +1) rows */
     memmove(&E.row[at+1],&E.row[at],sizeof(erow)*(E.numrows-at));
     for(int j=at+1;j<=E.numrows;j++) E.row[j].idx++;
 
@@ -591,6 +653,7 @@ void editorOpen(char* filename){
     allocating the required memory and assuming you will free() that memory. */
 
     editorSelectSyntaxHighlight();
+    editorLoadProcessFunc(E.syntax->filetype);
 
     FILE* fp=fopen(filename,"r");
     if(!fp) die("fopen");
@@ -616,6 +679,7 @@ void editorSave(){
             return;
         }
         editorSelectSyntaxHighlight();
+        editorLoadProcessFunc(E.syntax->filetype);
     }
 
     int len;
@@ -855,7 +919,7 @@ void editorDrawMessageBar(struct abuf *ab){
     abAppend(ab,"\x1b[K",3);
     int msglen=strlen(E.statusmsg);
     if(msglen>E.screencols) msglen=E.screencols;
-    if(msglen && time(NULL)-E.statusmsg_time<4)
+    if(msglen && time(NULL)-E.statusmsg_time<3)
         abAppend(ab,E.statusmsg,msglen);
 }
 void editorRefreshScreen(){
@@ -886,6 +950,51 @@ void editorSetStatusMessage(const char* fmt,...){
     vsnprintf(E.statusmsg,sizeof(E.statusmsg),fmt,ap);
     va_end(ap);
     E.statusmsg_time=time(NULL);
+}
+
+/* ***process functions*** */
+void editorProcess(){
+    if(E.pfuncnum){
+        int choice=0;
+        char* prefix="Available process: ";
+        while(1){
+            char buf[128];
+            memset(buf,'\0',sizeof(buf));
+            strcpy(buf,prefix);
+            for (int i = 0; i < E.pfuncnum; i++){
+                char temp[32];
+                if(i==choice){
+                    snprintf(temp,sizeof(temp),"\x1b[1m[%s] \x1b[m",E.pfuncname[i]);
+                }else{
+                    snprintf(temp,sizeof(temp),"[%s] ",E.pfuncname[i]);
+                }
+                strcat(buf,temp);
+            }
+            strcat(buf,"(Arrows | Enter | ESC)");
+            editorSetStatusMessage(buf);
+            editorRefreshScreen();
+
+            int c=editorReadKey();
+            switch (c){
+                case '\r':
+                    E.processfuncs[choice]();
+                    return;
+                case '\x1b':
+                    editorSetStatusMessage("Process: aborted.");
+                    return;
+                case ARROW_LEFT:
+                    choice==0 ? choice=E.pfuncnum-1 :choice--;
+                    break;
+                case ARROW_RIGHT:
+                    choice==E.pfuncnum-1 ? choice=0 : choice++;
+                default:
+                    break;
+            }
+        }
+
+    }else{
+        editorSetStatusMessage("Process: no available function, process aborted.");
+    }
 }
 
 /* ***input*** */
@@ -990,6 +1099,9 @@ void editorProcessKeypress(){
     case CTRL_KEY('f'):
         editorFind();
         break;
+    case CTRL_KEY('p'):
+        editorProcess();
+        break;
     case HOME_KEY:
         E.cx=0;
         break;
@@ -1063,6 +1175,8 @@ void initEditor(){
     if(getWindowSize(&E.screenrows,&E.screencols)==-1) die("getWindowSize");
     E.screenrows-=2;
     E.syntax=NULL;
+    E.processfuncs=NULL;
+    E.pfuncnum=0;
 }
 
 int main(int argc, char* argv[]){
@@ -1071,7 +1185,7 @@ int main(int argc, char* argv[]){
     if(argc>=2){
         editorOpen(argv[1]);
     }
-    editorSetStatusMessage("HELP: Ctrl-S=save | Ctrl-Q=quit | Ctrl-F=find");
+    editorSetStatusMessage("HELP: Ctrl-S=save | Ctrl-Q=quit | Ctrl-F=find | Ctrl-P=Process");
 
     while(1){
         editorRefreshScreen();
