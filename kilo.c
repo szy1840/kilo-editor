@@ -117,6 +117,7 @@ void editorSetStatusMessage(const char* fmt,...);
 void editorRefreshScreen();
 char* editorPrompt(char* prompt,void (*callback)(char*,int));
 void editorInsertRow(int at,char* s,size_t len);
+void editorDelRow(int at);
 
 /* ***terminal*** */
 void die(const char* s){
@@ -444,30 +445,57 @@ void Pfunc_C_AutoPrototype(){
         return;
     }
 
+    regex_t fmain;
+    reti=regcomp(&fmain,"^(void|int)\\s+main",REG_EXTENDED);
+    if(reti){
+        editorSetStatusMessage("regex fail to compile.");
+        return;
+    }
+
     int count=0;
-    int record_rownum=E.numrows;
-    int pt_pos=0;
-    for (int i = 0; i < record_rownum; i++){
+    int pt_pos=-1;
+    for (int i = 0; i < E.numrows; i++){
         reti=regexec(&pt,E.row[i].render,0,NULL,0);
         if(!reti){
             pt_pos=i;
             break;
         }
     }
-    
-    
+    if(pt_pos==-1){
+        editorInsertRow(0,"/* prototype */",strlen("/* prototype */"));
+        editorInsertRow(1,"",0);
+        pt_pos=0;
+    }
+
+    int i=pt_pos+1;
+    while(strcmp(E.row[i].render,"")!=0){
+        editorDelRow(i);
+    }
+
+    int record_rownum=E.numrows;
     for(int i=record_rownum-1;i>pt_pos;i--){
         reti = regexec(&regex,E.row[i+count].render,0,NULL,0);
             if(!reti){
-                editorSetStatusMessage(E.row[i].render);
-                editorRefreshScreen();
                 char rowbuf[256];
                 strncpy(rowbuf,E.row[i+count].render,sizeof(rowbuf));
+                if(!regexec(&fmain,rowbuf,0,NULL,0)) continue;
+                if(E.row[i+count].hl_open_comment){
+                    strncat(rowbuf,"*/",3);
+                }
                 rowbuf[255]='\0';
                 for(int j=strlen(rowbuf);j>=0;j--){
-                    if(rowbuf[j]=='{'){
-                        rowbuf[j]=';';
-                        break;
+                    if(E.row[i+count].hl[j]==HL_NORMAL){
+                        if(rowbuf[j]=='{'){
+                            rowbuf[j]=';';
+                            break;
+                        }
+                        if(rowbuf[j]=='}'){
+                            int find_bracket=j-1;
+                            while(rowbuf[find_bracket]!='{') find_bracket--;
+                            rowbuf[find_bracket]=';';
+                            rowbuf[find_bracket+1]='\0';
+                            break;
+                        }
                     }
                 }
                 editorInsertRow(pt_pos+1,rowbuf,strlen(rowbuf));
@@ -479,13 +507,14 @@ void Pfunc_C_AutoPrototype(){
                 return;
             }
     }
-    editorSetStatusMessage("count:%d",count);
+    editorSetStatusMessage("AutoPrototype: %d added/updated.",count);
     editorRefreshScreen();
 	regfree(&regex);
     regfree(&pt);
+    regfree(&fmain);
 }
 void hey(){
-
+    editorSetStatusMessage("hello Miss Chen :D");
 }
 void editorLoadProcessFunc(char* filetype){
     if(strcmp(filetype,"c")==0){

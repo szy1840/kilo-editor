@@ -1,12 +1,17 @@
 #include<stdio.h>
+
+
+
 int aaa(){
 }
-//  prototype
 char*** hello() {
 }
 
+//prototype
+struct act hey();
+sfsfsffs;
 
-int main(){//fsfsfsfs
+int main(){//fsfsfsfs{fsfs}sf
 }
 
 struct act hey(double x, double y){
@@ -15,12 +20,9 @@ struct act hey(double x, double y){
 enum days hellosfsf(){
 
 }
-enums fss fsfff(){
 
-}
-union fsfs jjjjj(){
+union fsfs jjjjj(){/*fsfsfsfs
+fsfsfsfsfsf*/
 	
 }
-int yes(){}
-
-}
+int yes(){ return 0;}
