@@ -881,7 +881,7 @@ void editorDrawRows(struct abuf *ab){
         if(filerow>=E.numrows){
             if(E.numrows==0 && y==E.screenrows/3){
                 char welcome[80];
-                int welcomelen=snprintf(welcome,sizeof(welcome),"Kilo editor -- version %s",KILO_VERSION);
+                int welcomelen=snprintf(welcome,sizeof(welcome),"welcome -- version %s",KILO_VERSION);
                 if(welcomelen>E.screencols) welcomelen=E.screencols;
                 int padding=(E.screencols-welcomelen)/2;
                 if(padding){
