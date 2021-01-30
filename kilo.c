@@ -1083,7 +1083,7 @@ char* editorPrompt(char* prompt,void (*callback)(char*,int)){
         if(callback) callback(buf,c);
     }
 }
-void editorMoveCorsor(int key){
+void editorMoveCursor(int key){
     erow *row=(E.cy>=E.numrows) ? NULL : &E.row[E.cy];
     switch (key)
     {
@@ -1168,7 +1168,7 @@ void editorProcessKeypress(){
         and ASCII code 127 is named DEL for “delete”. But for whatever reason, 
         in modern computers the Backspace key is mapped to 127 and the Delete key is mapped to the escape sequence <esc>[3~ 
         */
-        if(c==DEL_KEY)editorMoveCorsor(ARROW_RIGHT);//here.if you keep press delete,you will erase everything!!!
+        if(c==DEL_KEY)editorMoveCursor(ARROW_RIGHT);//here.if you keep press delete,you will erase everything!!!
         editorDelChar();
         break;
     
@@ -1183,7 +1183,7 @@ void editorProcessKeypress(){
             }
             int times=E.screenrows;
             while(times--){
-                editorMoveCorsor(c==PAGE_UP ? ARROW_UP : ARROW_DOWN);
+                editorMoveCursor(c==PAGE_UP ? ARROW_UP : ARROW_DOWN);
             }
         }
         break;
@@ -1192,7 +1192,7 @@ void editorProcessKeypress(){
     case ARROW_RIGHT:
     case ARROW_UP:
     case ARROW_DOWN:
-        editorMoveCorsor(c);
+        editorMoveCursor(c);
         break;
     
     case CTRL_KEY('l'):
