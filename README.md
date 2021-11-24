@@ -1,2 +1,3 @@
 # My Kilo
-a text editor on Linux, 'feature' branch provide auto prototype for C.
+A text editor under Linux.
+'feature' branch provides auto prototype for C.
